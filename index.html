@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ruota della Fortuna</title>
+<style>
+  :root {
+    --bg: #14121f;
+    --card: #1f1c30;
+    --text: #f4f1ff;
+    --muted: #a9a3c7;
+    --accent: #ffcc33;
+    --accent-dark: #e0a800;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: radial-gradient(circle at 50% 20%, #2a2545 0%, var(--bg) 70%);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+  }
+  h1 { margin: 0 0 6px; font-size: clamp(1.6rem, 5vw, 2.4rem); letter-spacing: .5px; }
+  .sub { margin: 0 0 24px; color: var(--muted); text-align: center; }
+  .wheel-wrap {
+    position: relative;
+    width: min(88vw, 440px);
+    aspect-ratio: 1;
+  }
+  canvas {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    box-shadow: 0 0 0 8px #2d2848, 0 0 0 12px var(--accent), 0 20px 50px rgba(0,0,0,.6);
+    transition: transform 6s cubic-bezier(.12,.8,.12,1);
+  }
+  .pointer {
+    position: absolute;
+    top: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0; height: 0;
+    border-left: 18px solid transparent;
+    border-right: 18px solid transparent;
+    border-top: 36px solid var(--accent);
+    filter: drop-shadow(0 4px 4px rgba(0,0,0,.5));
+    z-index: 2;
+  }
+  .hub {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 18%; aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #fff4c2, var(--accent) 55%, var(--accent-dark));
+    box-shadow: 0 4px 12px rgba(0,0,0,.5);
+    z-index: 1;
+  }
+  button {
+    margin-top: 32px;
+    padding: 14px 44px;
+    font-size: 1.15rem;
+    font-weight: 700;
+    border: none;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #1b1600;
+    cursor: pointer;
+    box-shadow: 0 6px 0 var(--accent-dark);
+    transition: transform .1s, box-shadow .1s, opacity .2s;
+  }
+  button:hover:not(:disabled) { transform: translateY(-2px); }
+  button:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 2px 0 var(--accent-dark); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .result {
+    margin-top: 24px;
+    min-height: 3.2em;
+    text-align: center;
+    font-size: 1.2rem;
+  }
+  .result strong { color: var(--accent); font-size: 1.5rem; display: block; margin-top: 4px; }
+</style>
+</head>
+<body>
+  <h1>🎡 Ruota della Fortuna</h1>
+  <p class="sub">Hai a disposizione un solo giro. Buona fortuna!</p>
+
+  <div class="wheel-wrap">
+    <div class="pointer"></div>
+    <canvas id="wheel" width="800" height="800"></canvas>
+    <div class="hub"></div>
+  </div>
+
+  <button id="spinBtn">GIRA!</button>
+  <div class="result" id="result"></div>
+
+<script>
+  // ====== CONFIGURA QUI I PREMI ======
+  const PRIZES = [
+    { label: "Sconto 10%",       color: "#ff5e7e" },
+    { label: "Ritenta",          color: "#5b6cff" },
+    { label: "Caffè omaggio",    color: "#ffb03b" },
+    { label: "Sconto 20%",       color: "#2ec4b6" },
+    { label: "Dolce omaggio",    color: "#9b5de5" },
+    { label: "Ritenta",          color: "#00a6fb" },
+    { label: "Sconto 5%",        color: "#f15bb5" },
+    { label: "Premio speciale!", color: "#43aa8b" }
+  ];
+  // Chiave di salvataggio: cambiala per "resettare" la ruota per tutti
+  const STORAGE_KEY = "ruota_fortuna_v1";
+  // ===================================
+
+  const canvas = document.getElementById("wheel");
+  const ctx = canvas.getContext("2d");
+  const btn = document.getElementById("spinBtn");
+  const resultEl = document.getElementById("result");
+  const N = PRIZES.length;
+  const slice = (2 * Math.PI) / N;
+
+  function drawWheel() {
+    const r = canvas.width / 2;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < N; i++) {
+      // spicchio i parte dall'alto (-90°) e va in senso orario
+      const start = -Math.PI / 2 + i * slice;
+      ctx.beginPath();
+      ctx.moveTo(r, r);
+      ctx.arc(r, r, r, start, start + slice);
+      ctx.closePath();
+      ctx.fillStyle = PRIZES[i].color;
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,.6)";
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      ctx.save();
+      ctx.translate(r, r);
+      ctx.rotate(start + slice / 2);
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#fff";
+      // riduce il carattere se l'etichetta è troppo lunga per lo spicchio
+      const maxW = r - 40 - r * 0.24;
+      let size = 38;
+      do {
+        ctx.font = "bold " + size + "px system-ui, sans-serif";
+        size -= 2;
+      } while (ctx.measureText(PRIZES[i].label).width > maxW && size > 16);
+      ctx.shadowColor = "rgba(0,0,0,.35)";
+      ctx.shadowBlur = 6;
+      ctx.fillText(PRIZES[i].label, r - 40, 0);
+      ctx.restore();
+    }
+  }
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+  function saveState(state) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+  }
+
+  // angolo (in gradi) che porta il centro dello spicchio "index" sotto la freccia
+  function angleForIndex(index) {
+    const center = index * (360 / N) + (360 / N) / 2;
+    return (360 - center) % 360;
+  }
+
+  function showResult(index, animated) {
+    const prize = PRIZES[index].label;
+    resultEl.innerHTML = (animated ? "🎉 Hai vinto:" : "Hai già girato la ruota. Il tuo risultato:") +
+      "<strong>" + prize + "</strong>";
+  }
+
+  function lockButton() {
+    btn.disabled = true;
+    btn.textContent = "Giro già effettuato";
+  }
+
+  // Stato iniziale: se ha già girato, mostra la ruota ferma sul risultato
+  drawWheel();
+  const saved = loadState();
+  if (saved && typeof saved.index === "number") {
+    canvas.style.transition = "none";
+    canvas.style.transform = "rotate(" + angleForIndex(saved.index) + "deg)";
+    lockButton();
+    showResult(saved.index, false);
+  }
+
+  btn.addEventListener("click", () => {
+    if (loadState()) { lockButton(); return; }
+
+    // estrazione casuale sicura
+    let rnd;
+    if (window.crypto && crypto.getRandomValues) {
+      rnd = crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296;
+    } else {
+      rnd = Math.random();
+    }
+    const index = Math.floor(rnd * N);
+
+    // salva SUBITO, così ricaricare durante l'animazione non concede un altro giro
+    saveState({ index, prize: PRIZES[index].label, date: new Date().toISOString() });
+    lockButton();
+    resultEl.textContent = "La ruota gira…";
+
+    // piccolo scostamento casuale dentro lo spicchio per realismo
+    const jitter = (Math.random() - 0.5) * (360 / N) * 0.7;
+    const finalAngle = 360 * 8 + angleForIndex(index) + jitter;
+    canvas.style.transform = "rotate(" + finalAngle + "deg)";
+
+    canvas.addEventListener("transitionend", () => showResult(index, true), { once: true });
+  });
+</script>
+</body>
+</html>
