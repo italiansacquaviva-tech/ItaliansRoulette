@@ -62,7 +62,7 @@
     box-shadow: 0 4px 12px rgba(0,0,0,.5);
     z-index: 1;
   }
-  button {
+  #spinBtn {
     margin-top: 32px;
     padding: 14px 44px;
     font-size: 1.15rem;
@@ -75,9 +75,9 @@
     box-shadow: 0 6px 0 var(--accent-dark);
     transition: transform .1s, box-shadow .1s, opacity .2s;
   }
-  button:hover:not(:disabled) { transform: translateY(-2px); }
-  button:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 2px 0 var(--accent-dark); }
-  button:disabled { opacity: .45; cursor: not-allowed; }
+  #spinBtn:hover:not(:disabled) { transform: translateY(-2px); }
+  #spinBtn:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 2px 0 var(--accent-dark); }
+  #spinBtn:disabled { opacity: .45; cursor: not-allowed; }
   .result {
     margin-top: 24px;
     min-height: 3.2em;
@@ -85,6 +85,66 @@
     font-size: 1.2rem;
   }
   .result strong { color: var(--accent); font-size: 1.5rem; display: block; margin-top: 4px; }
+
+  /* ====== POP-UP ====== */
+  .modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(8, 6, 18, .78);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 100;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .3s;
+  }
+  .modal.open { opacity: 1; pointer-events: auto; }
+  .modal-box {
+    position: relative;
+    width: min(100%, 420px);
+    background: var(--card);
+    border: 2px solid var(--accent);
+    border-radius: 20px;
+    padding: 32px 24px 28px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+    transform: scale(.85);
+    transition: transform .35s cubic-bezier(.2,1.4,.4,1);
+  }
+  .modal.open .modal-box { transform: scale(1); }
+  .modal-emoji { font-size: 3rem; line-height: 1; }
+  .modal-title { margin: 12px 0 4px; font-size: 1.2rem; color: var(--muted); font-weight: 600; }
+  .modal-prize { margin: 0 0 24px; font-size: 1.8rem; font-weight: 800; color: var(--accent); }
+  .redeem-btn {
+    display: inline-block;
+    width: 100%;
+    padding: 16px 20px;
+    font-size: 1.05rem;
+    font-weight: 800;
+    text-decoration: none;
+    text-transform: uppercase;
+    border-radius: 14px;
+    background: var(--accent);
+    color: #1b1600;
+    box-shadow: 0 6px 0 var(--accent-dark);
+    transition: transform .1s, box-shadow .1s;
+  }
+  .redeem-btn:hover { transform: translateY(-2px); }
+  .redeem-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 var(--accent-dark); }
+  .modal-close {
+    position: absolute;
+    top: 10px; right: 12px;
+    width: 34px; height: 34px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--muted);
+    font-size: 1.5rem;
+    cursor: pointer;
+  }
+  .modal-close:hover { color: var(--text); }
 </style>
 </head>
 <body>
@@ -100,26 +160,49 @@
   <button id="spinBtn">GIRA!</button>
   <div class="result" id="result"></div>
 
+  <!-- Pop-up premio: si apre SOLO subito dopo l'estrazione -->
+  <div class="modal" id="prizeModal" role="dialog" aria-modal="true" aria-labelledby="modalPrize">
+    <div class="modal-box">
+      <button class="modal-close" id="modalClose" aria-label="Chiudi">&times;</button>
+      <div class="modal-emoji">🎉</div>
+      <p class="modal-title">Complimenti! Hai vinto:</p>
+      <p class="modal-prize" id="modalPrize"></p>
+      <a class="redeem-btn" id="redeemBtn" href="#">CLICCA QUI PER RISCATTARE IL TUO PREMIO</a>
+    </div>
+  </div>
+
 <script>
   // ====== CONFIGURA QUI I PREMI ======
+  // label: testo sulla ruota ("\n" = a capo)
+  // name:  nome mostrato nel pop-up
+  // weight: probabilità in percentuale
+  // url:   link di riscatto
   const PRIZES = [
-    { label: "Sconto 10%",       color: "#ff5e7e" },
-    { label: "Ritenta",          color: "#5b6cff" },
-    { label: "Caffè omaggio",    color: "#ffb03b" },
-    { label: "Sconto 20%",       color: "#2ec4b6" },
-    { label: "Dolce omaggio",    color: "#9b5de5" },
-    { label: "Ritenta",          color: "#00a6fb" },
-    { label: "Sconto 5%",        color: "#f15bb5" },
-    { label: "Premio speciale!", color: "#43aa8b" }
+    { label: "SUITE",                   name: "SUITE",                   weight: 0.5, color: "#ffb03b",
+      url: "https://engine.pnsapi.io/v4/forms/viewPromo/?hashform=s3qgewdsshqt4bph3eod2q0ot60ve3es&p=s3qgewdsshqt4bph3eod2q0ot60ve3es1595251" },
+    { label: "BIRRA ALLA\nSPINA 0,20",  name: "BIRRA ALLA SPINA 0,20",   weight: 15,  color: "#5b6cff",
+      url: "https://engine.pnsapi.io/v4/forms/viewPromo/?hashform=s3qgewdsshqt4bph3eod2q0ot60ve3es&p=s3qgewdsshqt4bph3eod2q0ot60ve3es1562251" },
+    { label: "PIZZA\nMARGHERITA",       name: "PIZZA MARGHERITA",        weight: 20,  color: "#ff5e7e",
+      url: "https://engine.pnsapi.io/v4/forms/viewPromo/?hashform=s3qgewdsshqt4bph3eod2q0ot60ve3es&p=s3qgewdsshqt4bph3eod2q0ot60ve3es1529251" },
+    { label: "FRITTELLINE",             name: "FRITTELLINE",             weight: 25,  color: "#2ec4b6",
+      url: "https://engine.pnsapi.io/v4/forms/viewPromo/?hashform=s3qgewdsshqt4bph3eod2q0ot60ve3es&p=s3qgewdsshqt4bph3eod2q0ot60ve3es1463251" },
+    { label: "TIRAMISÙ",                name: "TIRAMISÙ",                weight: 25,  color: "#9b5de5",
+      url: "https://engine.pnsapi.io/v4/forms/viewPromo/?hashform=s3qgewdsshqt4bph3eod2q0ot60ve3es&p=s3qgewdsshqt4bph3eod2q0ot60ve3es1497251" },
+    { label: "SPAGHETTI\nALL'ASSASSINA", name: "SPAGHETTI ALL'ASSASSINA", weight: 15,  color: "#f15bb5",
+      url: "https://engine.pnsapi.io/v4/forms/viewPromo/?hashform=s3qgewdsshqt4bph3eod2q0ot60ve3es&p=s3qgewdsshqt4bph3eod2q0ot60ve3es1496251" }
   ];
   // Chiave di salvataggio: cambiala per "resettare" la ruota per tutti
-  const STORAGE_KEY = "ruota_fortuna_v1";
+  const STORAGE_KEY = "ruota_fortuna_v2";
   // ===================================
 
   const canvas = document.getElementById("wheel");
   const ctx = canvas.getContext("2d");
   const btn = document.getElementById("spinBtn");
   const resultEl = document.getElementById("result");
+  const modal = document.getElementById("prizeModal");
+  const modalPrize = document.getElementById("modalPrize");
+  const redeemBtn = document.getElementById("redeemBtn");
+  const modalClose = document.getElementById("modalClose");
   const N = PRIZES.length;
   const slice = (2 * Math.PI) / N;
 
@@ -145,16 +228,22 @@
       ctx.textAlign = "right";
       ctx.textBaseline = "middle";
       ctx.fillStyle = "#fff";
-      // riduce il carattere se l'etichetta è troppo lunga per lo spicchio
-      const maxW = r - 40 - r * 0.24;
-      let size = 38;
-      do {
-        ctx.font = "bold " + size + "px system-ui, sans-serif";
-        size -= 2;
-      } while (ctx.measureText(PRIZES[i].label).width > maxW && size > 16);
       ctx.shadowColor = "rgba(0,0,0,.35)";
       ctx.shadowBlur = 6;
-      ctx.fillText(PRIZES[i].label, r - 40, 0);
+
+      // supporta etichette su più righe e riduce il carattere se non entrano
+      const lines = PRIZES[i].label.split("\n");
+      const maxW = r - 40 - r * 0.24;
+      let size = 38;
+      const widest = () => Math.max(...lines.map(l => ctx.measureText(l).width));
+      ctx.font = "bold " + size + "px system-ui, sans-serif";
+      while (widest() > maxW && size > 16) {
+        size -= 2;
+        ctx.font = "bold " + size + "px system-ui, sans-serif";
+      }
+      const lineH = size * 1.15;
+      const y0 = -((lines.length - 1) * lineH) / 2;
+      lines.forEach((line, k) => ctx.fillText(line, r - 40, y0 + k * lineH));
       ctx.restore();
     }
   }
@@ -169,6 +258,25 @@
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
   }
 
+  // numero casuale sicuro in [0, 1)
+  function secureRandom() {
+    if (window.crypto && crypto.getRandomValues) {
+      return crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296;
+    }
+    return Math.random();
+  }
+
+  // estrazione pesata in base a "weight"
+  function pickWeightedIndex() {
+    const total = PRIZES.reduce((sum, p) => sum + p.weight, 0);
+    let x = secureRandom() * total;
+    for (let i = 0; i < N; i++) {
+      x -= PRIZES[i].weight;
+      if (x < 0) return i;
+    }
+    return N - 1;
+  }
+
   // angolo (in gradi) che porta il centro dello spicchio "index" sotto la freccia
   function angleForIndex(index) {
     const center = index * (360 / N) + (360 / N) / 2;
@@ -176,9 +284,8 @@
   }
 
   function showResult(index, animated) {
-    const prize = PRIZES[index].label;
     resultEl.innerHTML = (animated ? "🎉 Hai vinto:" : "Hai già girato la ruota. Il tuo risultato:") +
-      "<strong>" + prize + "</strong>";
+      "<strong>" + PRIZES[index].name + "</strong>";
   }
 
   function lockButton() {
@@ -186,10 +293,22 @@
     btn.textContent = "Giro già effettuato";
   }
 
+  function openModal(index) {
+    modalPrize.textContent = PRIZES[index].name;
+    redeemBtn.href = PRIZES[index].url;
+    modal.classList.add("open");
+    redeemBtn.focus();
+  }
+  function closeModal() { modal.classList.remove("open"); }
+  modalClose.addEventListener("click", closeModal);
+  modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+
   // Stato iniziale: se ha già girato, mostra la ruota ferma sul risultato
+  // (in questo caso il pop-up NON viene aperto)
   drawWheel();
   const saved = loadState();
-  if (saved && typeof saved.index === "number") {
+  if (saved && typeof saved.index === "number" && PRIZES[saved.index]) {
     canvas.style.transition = "none";
     canvas.style.transform = "rotate(" + angleForIndex(saved.index) + "deg)";
     lockButton();
@@ -199,17 +318,10 @@
   btn.addEventListener("click", () => {
     if (loadState()) { lockButton(); return; }
 
-    // estrazione casuale sicura
-    let rnd;
-    if (window.crypto && crypto.getRandomValues) {
-      rnd = crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296;
-    } else {
-      rnd = Math.random();
-    }
-    const index = Math.floor(rnd * N);
+    const index = pickWeightedIndex();
 
     // salva SUBITO, così ricaricare durante l'animazione non concede un altro giro
-    saveState({ index, prize: PRIZES[index].label, date: new Date().toISOString() });
+    saveState({ index, prize: PRIZES[index].name, date: new Date().toISOString() });
     lockButton();
     resultEl.textContent = "La ruota gira…";
 
@@ -218,7 +330,16 @@
     const finalAngle = 360 * 8 + angleForIndex(index) + jitter;
     canvas.style.transform = "rotate(" + finalAngle + "deg)";
 
-    canvas.addEventListener("transitionend", () => showResult(index, true), { once: true });
+    // a fine giro: risultato + pop-up (una sola volta)
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      showResult(index, true);
+      openModal(index);
+    };
+    canvas.addEventListener("transitionend", finish, { once: true });
+    setTimeout(finish, 6500); // sicurezza se transitionend non scatta
   });
 </script>
 </body>
