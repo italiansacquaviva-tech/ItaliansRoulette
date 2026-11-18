@@ -217,6 +217,10 @@
   ];
   // Chiave di salvataggio: cambiala per "resettare" la ruota per tutti
   const STORAGE_KEY = "ruota_fortuna_v2";
+  // Secondo giro: chi ha già girato una volta può rigirare UNA sola altra volta.
+  // Il primo giro resta salvato in STORAGE_KEY così com'è; il secondo va in questa chiave.
+  const STORAGE_KEY_2 = STORAGE_KEY + "_giro2";
+  const MAX_SPINS = 2;
   // ===================================
 
   const canvas = document.getElementById("wheel");
@@ -272,14 +276,21 @@
     }
   }
 
-  function loadState() {
+  function loadState(key) {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(key || STORAGE_KEY);
       return raw ? JSON.parse(raw) : null;
     } catch (e) { return null; }
   }
-  function saveState(state) {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+  function saveState(state, key) {
+    try { localStorage.setItem(key || STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+  }
+  // quanti giri ha già fatto questo dispositivo (0, 1 o 2)
+  function spinsDone() {
+    return (loadState(STORAGE_KEY) ? 1 : 0) + (loadState(STORAGE_KEY_2) ? 1 : 0);
+  }
+  function validState(st) {
+    return st && typeof st.index === "number" && PRIZES[st.index] ? st : null;
   }
 
   // numero casuale sicuro in [0, 1)
@@ -316,6 +327,10 @@
     btn.disabled = true;
     btn.textContent = "Giro già effettuato";
   }
+  function unlockButton() {
+    btn.disabled = false;
+    btn.textContent = "GIRA!";
+  }
 
   function openModal(index) {
     modalPrize.textContent = PRIZES[index].name;
@@ -331,27 +346,39 @@
   // Stato iniziale: se ha già girato, mostra la ruota ferma sul risultato
   // (in questo caso il pop-up NON viene aperto)
   drawWheel();
-  const saved = loadState();
-  if (saved && typeof saved.index === "number" && PRIZES[saved.index]) {
+  let currentAngle = 0;
+  // mostra l'ultimo risultato ottenuto (secondo giro se c'è, altrimenti il primo)
+  const saved = validState(loadState(STORAGE_KEY_2)) || validState(loadState(STORAGE_KEY));
+  if (saved) {
     canvas.style.transition = "none";
-    canvas.style.transform = "rotate(" + angleForIndex(saved.index) + "deg)";
-    lockButton();
+    currentAngle = angleForIndex(saved.index);
+    canvas.style.transform = "rotate(" + currentAngle + "deg)";
     showResult(saved.index, false);
   }
+  if (spinsDone() >= MAX_SPINS) lockButton();
 
   btn.addEventListener("click", () => {
-    if (loadState()) { lockButton(); return; }
+    const already = spinsDone();
+    if (already >= MAX_SPINS) { lockButton(); return; }
+    const key = already === 0 ? STORAGE_KEY : STORAGE_KEY_2;
+    const isLast = already + 1 >= MAX_SPINS;
 
     const index = pickWeightedIndex();
 
     // salva SUBITO, così ricaricare durante l'animazione non concede un altro giro
-    saveState({ index, prize: PRIZES[index].name, date: new Date().toISOString() });
-    lockButton();
+    saveState({ index, prize: PRIZES[index].name, date: new Date().toISOString() }, key);
+    if (isLast) lockButton(); else btn.disabled = true;
     resultEl.textContent = "La ruota gira…";
+
+    // riattiva l'animazione (era disattivata se la ruota è stata mostrata ferma sul risultato)
+    canvas.style.transition = "";
+    void canvas.offsetWidth;
 
     // piccolo scostamento casuale dentro lo spicchio per realismo
     const jitter = (Math.random() - 0.5) * (360 / N) * 0.7;
-    const finalAngle = 360 * 8 + angleForIndex(index) + jitter;
+    const base = Math.ceil(currentAngle / 360) * 360; // la ruota gira sempre in avanti
+    const finalAngle = base + 360 * 8 + angleForIndex(index) + jitter;
+    currentAngle = finalAngle;
     canvas.style.transform = "rotate(" + finalAngle + "deg)";
 
     // a fine giro: risultato + pop-up (una sola volta)
@@ -361,6 +388,7 @@
       done = true;
       showResult(index, true);
       openModal(index);
+      if (spinsDone() < MAX_SPINS) unlockButton();
     };
     canvas.addEventListener("transitionend", finish, { once: true });
     setTimeout(finish, 6500); // sicurezza se transitionend non scatta
