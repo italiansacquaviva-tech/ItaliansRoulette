@@ -200,9 +200,10 @@
   // label: testo sulla ruota ("\n" = a capo)
   // name:  nome mostrato nel pop-up
   // weight: probabilità in percentuale
+  // fixed:  true = la probabilità resta sempre "weight"% in ogni giro (non viene ricalcolata)
   // url:   link di riscatto
   const PRIZES = [
-    { label: "SUITE",                   name: "SUITE",                   weight: 0, color: "#ffb03b",
+    { label: "SUITE",                   name: "SUITE",                   weight: 0.5, fixed: true, color: "#ffb03b",
       url: "https://engine.pnsapi.io/v4/forms/viewPromo/?hashform=s3qgewdsshqt4bph3eod2q0ot60ve3es&p=s3qgewdsshqt4bph3eod2q0ot60ve3es1595251" },
     { label: "BIRRA ALLA\nSPINA 0,20",  name: "BIRRA ALLA SPINA 0,20",   weight: 15,  color: "#5b6cff",
       url: "https://engine.pnsapi.io/v4/forms/viewPromo/?hashform=s3qgewdsshqt4bph3eod2q0ot60ve3es&p=s3qgewdsshqt4bph3eod2q0ot60ve3es1562251" },
@@ -220,7 +221,9 @@
   // Secondo giro: chi ha già girato una volta può rigirare UNA sola altra volta.
   // Il primo giro resta salvato in STORAGE_KEY così com'è; il secondo va in questa chiave.
   const STORAGE_KEY_2 = STORAGE_KEY + "_giro2";
-  const MAX_SPINS = 2;
+  // Terzo giro: salvato in una chiave separata, le prime due restano intatte.
+  const STORAGE_KEY_3 = STORAGE_KEY + "_giro3";
+  const MAX_SPINS = 3;
   // ===================================
 
   const canvas = document.getElementById("wheel");
@@ -285,9 +288,16 @@
   function saveState(state, key) {
     try { localStorage.setItem(key || STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
   }
-  // quanti giri ha già fatto questo dispositivo (0, 1 o 2)
+  // quanti giri ha già fatto questo dispositivo (0, 1, 2 o 3)
   function spinsDone() {
-    return (loadState(STORAGE_KEY) ? 1 : 0) + (loadState(STORAGE_KEY_2) ? 1 : 0);
+    return (loadState(STORAGE_KEY) ? 1 : 0) + (loadState(STORAGE_KEY_2) ? 1 : 0) + (loadState(STORAGE_KEY_3) ? 1 : 0);
+  }
+  // indici dei premi già vinti in precedenza su questo dispositivo
+  function wonIndexes() {
+    return [STORAGE_KEY, STORAGE_KEY_2, STORAGE_KEY_3]
+      .map(k => validState(loadState(k)))
+      .filter(Boolean)
+      .map(st => st.index);
   }
   function validState(st) {
     return st && typeof st.index === "number" && PRIZES[st.index] ? st : null;
@@ -301,14 +311,29 @@
     return Math.random();
   }
 
-  // estrazione pesata in base a "weight"
+  // estrazione pesata in base a "weight", escludendo i premi già vinti
   function pickWeightedIndex() {
-    const total = PRIZES.reduce((sum, p) => sum + p.weight, 0);
+    const won = wonIndexes();
+    // 1) premi a probabilità fissa (es. SUITE): sempre esattamente "weight"% ad ogni giro
+    let f = secureRandom() * 100;
+    for (let i = 0; i < N; i++) {
+      if (!PRIZES[i].fixed || won.includes(i)) continue;
+      f -= PRIZES[i].weight;
+      if (f < 0) return i;
+    }
+    // 2) altrimenti si estrae tra gli altri premi, ricalcolati in proporzione
+    let w = PRIZES.map((p, i) => (won.includes(i) || p.fixed) ? 0 : p.weight);
+    let total = w.reduce((sum, v) => sum + v, 0);
+    if (total <= 0) { // sicurezza: se non restano premi nuovi, si estrae tra tutti
+      w = PRIZES.map(p => p.weight);
+      total = w.reduce((sum, v) => sum + v, 0);
+    }
     let x = secureRandom() * total;
     for (let i = 0; i < N; i++) {
-      x -= PRIZES[i].weight;
+      x -= w[i];
       if (x < 0) return i;
     }
+    for (let i = N - 1; i >= 0; i--) if (w[i] > 0) return i;
     return N - 1;
   }
 
@@ -347,8 +372,8 @@
   // (in questo caso il pop-up NON viene aperto)
   drawWheel();
   let currentAngle = 0;
-  // mostra l'ultimo risultato ottenuto (secondo giro se c'è, altrimenti il primo)
-  const saved = validState(loadState(STORAGE_KEY_2)) || validState(loadState(STORAGE_KEY));
+  // mostra l'ultimo risultato ottenuto (terzo giro, poi secondo, poi primo)
+  const saved = validState(loadState(STORAGE_KEY_3)) || validState(loadState(STORAGE_KEY_2)) || validState(loadState(STORAGE_KEY));
   if (saved) {
     canvas.style.transition = "none";
     currentAngle = angleForIndex(saved.index);
@@ -360,7 +385,7 @@
   btn.addEventListener("click", () => {
     const already = spinsDone();
     if (already >= MAX_SPINS) { lockButton(); return; }
-    const key = already === 0 ? STORAGE_KEY : STORAGE_KEY_2;
+    const key = already === 0 ? STORAGE_KEY : (already === 1 ? STORAGE_KEY_2 : STORAGE_KEY_3);
     const isLast = already + 1 >= MAX_SPINS;
 
     const index = pickWeightedIndex();
